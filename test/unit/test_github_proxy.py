@@ -12,6 +12,7 @@ SECRETS_MANAGER_GITHUB_TOKEN = "don't tell!!"
 BUILD_STATUS = 'SUCCEEDED'
 PR_ID = 5
 COMMIT_ID = 'da39a3ee5e6b4b0d3255bfef95601890afd80709'
+GROUP_ID = 'GROUP-ID'
 LOGS_URL = 'https://foo.com'
 
 
@@ -60,10 +61,12 @@ def mock_github(mocker):
     mocker.patch.object(github_proxy, 'Github')
     return github_proxy.Github.return_value
 
+
 @pytest.fixture
 def mock_log(mocker):
     mocker.patch.object(github_proxy, 'LOG')
     return github_proxy.LOG
+
 
 def test_publish_pr_comment(mocker, mock_config, mock_codebuild, mock_secretsmanager, mock_github):
     build = MagicMock(status=BUILD_STATUS)
@@ -86,13 +89,46 @@ def test_publish_pr_comment(mocker, mock_config, mock_codebuild, mock_secretsman
     mock_repo.get_pull.assert_called_once_with(PR_ID)
     mock_pr = mock_repo.get_pull.return_value
 
-    expected_comment = github_proxy.PR_COMMENT_TEMPLATE.format(
+    expected_comment = github_proxy.format_pr_comment_template(
         project_name=test_constants.PROJECT_NAME,
         commit_id=COMMIT_ID,
         build_status=BUILD_STATUS,
         logs_url=LOGS_URL,
     )
     mock_pr.create_issue_comment.assert_called_once_with(expected_comment)
+
+
+def test_publish_pr_comment_for_batch_build(mocker, mock_config, mock_codebuild, mock_secretsmanager, mock_github):
+    build = MagicMock(status=BUILD_STATUS)
+    build.get_logs_url.return_value = LOGS_URL
+    build.get_pr_id.return_value = PR_ID
+    build.commit_id = COMMIT_ID
+    build.group_identifier = GROUP_ID
+
+    proxy = github_proxy.GithubProxy()
+    proxy.publish_pr_comment(build)
+
+    mock_codebuild.batch_get_projects.assert_called_once_with(
+        names=[test_constants.PROJECT_NAME]
+    )
+    mock_secretsmanager.get_secret_value.assert_not_called()
+    github_proxy.Github.assert_called_once_with(CODEBUILD_GITHUB_TOKEN)
+
+    mock_github.get_user.assert_called_once_with(GITHUB_OWNER)
+    mock_github.get_user.return_value.get_repo.assert_called_once_with(GITHUB_REPO)
+    mock_repo = mock_github.get_user.return_value.get_repo.return_value
+    mock_repo.get_pull.assert_called_once_with(PR_ID)
+    mock_pr = mock_repo.get_pull.return_value
+
+    expected_comment = github_proxy.format_pr_comment_template(
+        project_name=test_constants.PROJECT_NAME,
+        group_identifier=GROUP_ID,
+        commit_id=COMMIT_ID,
+        build_status=BUILD_STATUS,
+        logs_url=LOGS_URL,
+    )
+    mock_pr.create_issue_comment.assert_called_once_with(expected_comment)
+
 
 def test_delete_previous_comments(mocker, mock_config, mock_codebuild, mock_secretsmanager, mock_github, mock_log):
     build = MagicMock(status=BUILD_STATUS)
@@ -116,6 +152,7 @@ def test_delete_previous_comments(mocker, mock_config, mock_codebuild, mock_secr
     comment2.delete.assert_called_once()
     comment3.delete.assert_called_once()
     mock_log.warning.assert_called_once()
+
 
 def test_init_github_info_auth_with_secrets_manager_arn(mocker, mock_config, mock_codebuild, mock_secretsmanager):
     secret_arn = 'arn:secret'

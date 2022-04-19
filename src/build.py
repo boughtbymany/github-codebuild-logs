@@ -24,6 +24,7 @@ class Build:
         self.id = build_event['detail']['build-id']
         self.project_name = build_event['detail']['project-name']
         self.status = build_event['detail']['build-status']
+        self.group_identifier = None
 
     def get_pr_id(self):
         """If this build was for a PR branch, returns the PR ID, otherwise returns None."""
@@ -72,5 +73,55 @@ class Build:
         if not hasattr(self, '_build_details'):
             response = CODEBUILD.batch_get_builds(ids=[self.id])
             self._build_details = response['builds'][0]
+            self._process_batch()
             LOG.debug('Build %s details: %s', self.id, self._build_details)
         return self._build_details
+
+    def _process_batch(self):
+        if 'buildBatchArn' not in self._build_details:
+            return
+
+        # Get batch from batch item details received in the event
+        try:
+            batch = CODEBUILD.batch_get_build_batches(
+                ids=[self._build_details['buildBatchArn'].split('/')[1]]
+            )['buildBatches'][0]
+        except KeyError:
+            return
+
+        if 'sourceVersion' not in batch:
+            return
+
+        # Batch contains the `pr/123` as sourceVersion if the event was fired for a PR
+        # Pushing it up to the `_build_details` object which has the commit ID as sourceVersion
+        # Without overwriting sourceVersion makes `is_pr_build` always return False
+        # Resulting in no logs transferred for batch builds
+        self._build_details['sourceVersion'] = batch['sourceVersion']
+
+        if 'buildGroups' not in batch:
+            return
+
+        # Finding "group" (item of the batch for which the event was fired)
+        iterator = filter(
+            lambda group: 'currentBuildSummary' in group
+            and 'arn' in group['currentBuildSummary']
+            and group['currentBuildSummary']['arn'] == self._build_details['arn'],
+            batch['buildGroups']
+        )
+        group = next(iterator, False)
+
+        # If group not found, return early
+        if group is False:
+            return
+
+        if 'identifier' not in group:
+            return
+
+        # group_identifier is the name of the item in the batch
+        # Saving it to a property for further processing later
+        self.group_identifier = group['identifier']
+
+        # Setting build status to group item status to correctly report build status
+        # Without this the status of the item would inherit the status of the batch
+        # which is undesired behaviour for a successful batch item in a batch where other items are failing
+        self.status = group['currentBuildSummary']['buildStatus']

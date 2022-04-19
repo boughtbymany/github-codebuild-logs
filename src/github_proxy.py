@@ -23,9 +23,9 @@ CREATED BY GITHUB-CODEBUILD-LOGS
 PR_COMMENT_TEMPLATE = f"""
 ### AWS CodeBuild CI Report
 
-* CodeBuild project: {{project_name}}
+* CodeBuild project: **{{project_name}}**{{group_identifier}}
 * Commit ID: {{commit_id}}
-* Result: {{build_status}}
+* Result: **{{build_status}}**
 * [Build Logs]({{logs_url}}) (available for {config.EXPIRATION_IN_DAYS} days)
 
 *Powered by [github-codebuild-logs]({SAR_APP_URL}),\
@@ -33,6 +33,16 @@ PR_COMMENT_TEMPLATE = f"""
 
 {HIDDEN_COMMENT}
 """
+
+
+def format_pr_comment_template(**kwargs):
+    if 'group_identifier' in kwargs and kwargs['group_identifier'] and isinstance(kwargs['group_identifier'], str):
+        kwargs['group_identifier'] = f" (***{kwargs['group_identifier']}***)"
+    else:
+        kwargs['group_identifier'] = ''
+
+    return PR_COMMENT_TEMPLATE.format(**kwargs)
+
 
 CODEBUILD = boto3.client('codebuild')
 SECRETS_MANAGER = boto3.client('secretsmanager')
@@ -47,8 +57,9 @@ class GithubProxy:
 
     def publish_pr_comment(self, build):
         """Publish PR comment with link to build logs."""
-        pr_comment = PR_COMMENT_TEMPLATE.format(
+        pr_comment = format_pr_comment_template(
             project_name=config.PROJECT_NAME,
+            group_identifier=build.group_identifier,
             commit_id=build.commit_id,
             build_status=build.status,
             logs_url=build.get_logs_url(),

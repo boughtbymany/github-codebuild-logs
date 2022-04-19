@@ -7,6 +7,8 @@ BUILD_ID = 'some-build'
 BUILD_STATUS = 'SUCCEEDED'
 LOG_GROUP_NAME = "log-group"
 LOG_STREAM_NAME = "log-stream"
+BATCH_ARN = 'Account/BatchBuildID'
+BUILD_ARN = 'Account/BuildID'
 
 
 @pytest.fixture
@@ -40,8 +42,20 @@ def test_get_pr_id_not_pr(mocker, mock_codebuild):
     assert build_obj.get_pr_id() is None
 
 
+def test_batch_build_get_pr_id_not_pr(mocker, mock_codebuild):
+    _mock_batch_build_details('master')
+    build_obj = build.Build(_mock_build_event())
+    assert build_obj.get_pr_id() is None
+
+
 def test_get_pr_id_no_source_version(mocker, mock_codebuild):
     _mock_build_details(None)
+    build_obj = build.Build(_mock_build_event())
+    assert build_obj.get_pr_id() is None
+
+
+def test_batch_build_get_pr_id_no_source_version(mocker, mock_codebuild):
+    _mock_batch_build_details(None)
     build_obj = build.Build(_mock_build_event())
     assert build_obj.get_pr_id() is None
 
@@ -52,14 +66,32 @@ def test_get_pr_id_is_pr(mocker, mock_codebuild):
     assert build_obj.get_pr_id() == 123
 
 
+def test_batch_build_get_pr_id_is_pr(mocker, mock_codebuild):
+    _mock_batch_build_details('pr/123')
+    build_obj = build.Build(_mock_build_event())
+    assert build_obj.get_pr_id() == 123
+
+
 def test_is_pr_build_not_pr(mocker, mock_codebuild):
     _mock_build_details('master')
     build_obj = build.Build(_mock_build_event())
     assert build_obj.is_pr_build() is False
 
 
+def test_batch_build_is_pr_build_not_pr(mocker, mock_codebuild):
+    _mock_batch_build_details('master')
+    build_obj = build.Build(_mock_build_event())
+    assert build_obj.is_pr_build() is False
+
+
 def test_is_pr_build_is_pr(mocker, mock_codebuild):
     _mock_build_details('pr/123')
+    build_obj = build.Build(_mock_build_event())
+    assert build_obj.is_pr_build() is True
+
+
+def test_batch_build_id_pr_build_is_pr(mocker, mock_codebuild):
+    _mock_batch_build_details('pr/123')
     build_obj = build.Build(_mock_build_event())
     assert build_obj.is_pr_build() is True
 
@@ -107,8 +139,58 @@ def test_copy_logs(mocker, mock_codebuild, mock_cw_logs, mock_bucket):
     )
 
 
+def test_batch_build_copy_logs(mocker, mock_codebuild, mock_cw_logs, mock_bucket):
+    mock_cw_logs.get_paginator.return_value.paginate.return_value = [
+        {
+            'events': [
+                {
+                    'message': 'foo',
+                },
+                {
+                    'message': 'bar',
+                }
+            ]
+        },
+        {
+            'events': [
+                {
+                    'message': 'baz',
+                },
+                {
+                    'message': 'blah',
+                }
+            ]
+        },
+    ]
+    _mock_batch_build_details('pr/123')
+
+    build_obj = build.Build(_mock_build_event())
+    build_obj.copy_logs()
+
+    mock_codebuild.batch_get_builds.assert_called_once_with(ids=[BUILD_ID])
+    mock_codebuild.batch_get_build_batches.assert_called_once_with(ids=[BATCH_ARN.split('/')[1]])
+
+    mock_cw_logs.get_paginator.assert_called_once_with('filter_log_events')
+    mock_cw_logs.get_paginator.return_value.paginate.assert_called_once_with(
+        logGroupName=LOG_GROUP_NAME,
+        logStreamNames=[LOG_STREAM_NAME]
+    )
+
+    mock_bucket.put_object.assert_called_once_with(
+        Key=LOG_STREAM_NAME + '/build.log',
+        Body='foobarbazblah',
+        ContentType="text/plain"
+    )
+
+
 def test_get_logs_url(mocker, mock_codebuild):
     _mock_build_details('pr/123')
+    build_obj = build.Build(_mock_build_event())
+    assert build_obj.get_logs_url() == test_constants.BUILD_LOGS_API_ENDPOINT + '?key=' + LOG_STREAM_NAME + '%2Fbuild.log'
+
+
+def test_batch_build_get_logs_url(mocker, mock_codebuild):
+    _mock_batch_build_details('pr/123')
     build_obj = build.Build(_mock_build_event())
     assert build_obj.get_logs_url() == test_constants.BUILD_LOGS_API_ENDPOINT + '?key=' + LOG_STREAM_NAME + '%2Fbuild.log'
 
@@ -138,3 +220,41 @@ def _mock_build_details(source_version):
         build_details['builds'][0]['sourceVersion'] = source_version
 
     build.CODEBUILD.batch_get_builds.return_value = build_details
+
+
+def _mock_batch_build_details(source_version):
+    build_details = {
+        'builds': [
+            {
+                'arn': BUILD_ARN,
+                'buildBatchArn': BATCH_ARN,
+                'logs': {
+                    'groupName': LOG_GROUP_NAME,
+                    'streamName': LOG_STREAM_NAME,
+                }
+            }
+        ]
+    }
+
+    batch_details = {
+        'buildBatches': [
+            # 'sourceVersion'
+            {
+                'buildGroups': [
+                    {
+                        'currentBuildSummary': {
+                            'arn': BUILD_ARN,
+                            'buildStatus': BUILD_STATUS
+                        },
+                        'identifier': 'BatchItemName'
+                    }
+                ]
+            }
+        ]
+    }
+
+    if source_version:
+        batch_details['buildBatches'][0]['sourceVersion'] = source_version
+
+    build.CODEBUILD.batch_get_builds.return_value = build_details
+    build.CODEBUILD.batch_get_build_batches.return_value = batch_details

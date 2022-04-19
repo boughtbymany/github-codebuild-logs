@@ -89,6 +89,7 @@ Resources:
             Action:
               - codebuild:BatchGetBuilds
               - codebuild:BatchGetProjects
+              - codebuild:BatchGetBuildBatches
             Resource: !Sub arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${CodeBuildProjectName}
         - Statement:
             Effect: Allow
