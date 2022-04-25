@@ -36,6 +36,7 @@ PR_COMMENT_TEMPLATE = f"""
 
 
 def format_pr_comment_template(**kwargs):
+    """Github PR command formatter."""
     if 'group_identifier' in kwargs and kwargs['group_identifier'] and isinstance(kwargs['group_identifier'], str):
         kwargs['group_identifier'] = f" (***{kwargs['group_identifier']}***)"
     else:
