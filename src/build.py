@@ -102,12 +102,16 @@ class Build:
             return
 
         # Finding "group" (item of the batch for which the event was fired)
-        iterator = filter(
-            lambda group: 'currentBuildSummary' in group
-            and 'arn' in group['currentBuildSummary']
-            and group['currentBuildSummary']['arn'] == self._build_details['arn'],
-            batch['buildGroups']
-        )
+        def iterator_callback(group):
+            if 'currentBuildSummary' not in group:
+                return False
+
+            if 'arn' not in group['currentBuildSummary']:
+                return False
+
+            return group['currentBuildSummary']['arn'] == self._build_details['arn']
+
+        iterator = filter(iterator_callback, batch['buildGroups'])
         group = next(iterator, False)
 
         # If group not found, return early
