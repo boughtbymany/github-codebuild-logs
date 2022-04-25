@@ -19,7 +19,7 @@ Metadata:
     Labels: [github, pr, ci, codebuild, logs]
     HomePageUrl: https://github.com/jlhood/github-codebuild-logs
     # Update the semantic version and run sam publish to publish a new version of your app
-    SemanticVersion: 1.5.1
+    SemanticVersion: 1.6.0
     # best practice is to use git tags for each release and link to the version tag as your source code URL
     SourceCodeUrl: https://github.com/jlhood/github-codebuild-logs/tree/1.5.0
 
@@ -65,7 +65,20 @@ Parameters:
     MaxValue: 900
     Default: 60
     Description: Timeout for Process Build Event Lambda.
-
+  PRComment:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: Set to "false" to not publish a comment
+  UpdateCommitStatus:
+    Type: String
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "false"
+    Description: Set to "true" to update commit status 
 Conditions:
   UseDefaultProjectLogGroupName:
     !Equals [!Ref CodeBuildProjectCustomLogGroupName, '']
@@ -119,6 +132,8 @@ Resources:
             - ''
           DELETE_PREVIOUS_COMMENTS: !Ref DeletePreviousComments
           COMMENT_ON_SUCCESS: !Ref CommentOnSuccess
+          PUBLISH_PR_COMMENT: !Ref PRComment
+          UPDATE_COMMIT_STATUS: !Ref UpdateCommitStatus
       Events:
         BuildStatus:
           Type: CloudWatchEvent

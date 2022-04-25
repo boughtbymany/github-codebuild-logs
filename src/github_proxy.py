@@ -4,6 +4,7 @@ import re
 
 import boto3
 from github import Github, GithubException
+from build import Build
 
 import config
 import lambdalogging
@@ -83,6 +84,22 @@ class GithubProxy:
                 except GithubException as e:
                     LOG.warning('Failed to delete previous comment: repo=%s/%s, pr_id=%s, comment_id=%s, error=%s',
                                 self._github_owner, self._github_repo, build.get_pr_id(), comment.id, str(e))
+
+    def update_commit_status(self, build: Build):
+        """Update commit status."""
+        repo = self._get_repo()
+        commit = repo.get_commit(sha=build.commit_id)
+
+        group_identifier = ''
+        if hasattr(build, 'group_identifier') and build.group_identifier and isinstance(build.group_identifier, str):
+            group_identifier = f' [{build.group_identifier}]'
+
+        commit.create_status(
+            state='success',
+            target_url=build.get_logs_url(),
+            description='Logs are ready',
+            context=f'CodeBuild logs ({config.PROJECT_NAME}){group_identifier} {build.commit_id[:7]}'
+        )
 
     def _get_repo(self):
         if not hasattr(self, '_repo'):

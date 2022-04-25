@@ -22,19 +22,41 @@ def handler(build_event, context):
     LOG.debug('Received event: %s', build_event)
 
     build = Build(build_event)
+    
+    LOG.info('Copying build logs for build: project=%s, pr_id=%s, commit_id=%s, build_logs_url=%s',
+             build.project_name,
+             build.commit_id,
+             build.get_pr_id(),
+             build.get_logs_url()
+             )
+    
+    build.copy_logs()
 
+    update_pr(build)
+    update_commit_status(build)
+
+
+def update_pr(build: Build):
     if not build.is_pr_build():
         LOG.debug('Not a PR build')
         return
-
-    LOG.info('Copying build logs for PR build: project=%s, pr_id=%s, build_logs_url=%s',
-             build.project_name, build.get_pr_id(), build.get_logs_url())
-    build.copy_logs()
 
     if config.DELETE_PREVIOUS_COMMENTS:
         GITHUB.delete_previous_comments(build)
 
     if build.status == 'SUCCEEDED' and not config.COMMENT_ON_SUCCESS:
         LOG.debug('Not publishing comment because build SUCCEEDED but COMMENT_ON_SUCCESS is set to false.')
-    else:
-        GITHUB.publish_pr_comment(build)
+        return
+
+    if not config.PUBLISH_PR_COMMENT:
+        LOG.debug('Not publishing comment because PUBLISH_PR_COMMENT is set to false')
+        return
+
+    GITHUB.publish_pr_comment(build)
+
+
+def update_commit_status(build: Build):
+    if not config.UPDATE_COMMIT_STATUS:
+        return
+
+    GITHUB.update_commit_status(build)
