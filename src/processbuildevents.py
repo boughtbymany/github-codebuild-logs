@@ -22,21 +22,25 @@ def handler(build_event, context):
     LOG.debug('Received event: %s', build_event)
 
     build = Build(build_event)
-    
+
     LOG.info('Copying build logs for build: project=%s, pr_id=%s, commit_id=%s, build_logs_url=%s',
              build.project_name,
              build.commit_id,
              build.get_pr_id(),
              build.get_logs_url()
              )
-    
+
+    if not should_copy_logs(build):
+        return
+
     build.copy_logs()
 
-    update_pr(build)
+    publish_pr_comment(build)
     update_commit_status(build)
 
 
-def update_pr(build: Build):
+def publish_pr_comment(build: Build):
+    """Publish PR comment."""
     if not build.is_pr_build():
         LOG.debug('Not a PR build')
         return
@@ -56,7 +60,13 @@ def update_pr(build: Build):
 
 
 def update_commit_status(build: Build):
+    """Update commit status."""
     if not config.UPDATE_COMMIT_STATUS:
         return
 
     GITHUB.update_commit_status(build)
+
+
+def should_copy_logs(build: Build):
+    """Return if the logs need copying or not."""
+    return build.is_pr_build() or config.UPDATE_COMMIT_STATUS
